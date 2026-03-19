@@ -1,0 +1,75 @@
+{
+  "name": "typespec-resource-graph",
+  "displayName": "TypeSpec Resource Graph",
+  "description": "Visualize Azure ARM TypeSpec resources as a tree view",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Visualization"],
+  "activationEvents": [
+    "workspaceContains:**/tspconfig.yaml",
+    "workspaceContains:**/*.tsp"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "typespecResourceGraph",
+          "title": "TypeSpec Resources",
+          "icon": "$(type-hierarchy)"
+        }
+      ]
+    },
+    "views": {
+      "typespecResourceGraph": [
+        {
+          "id": "typespecResourceGraph.resources",
+          "name": "Resources",
+          "contextualTitle": "TypeSpec ARM Resources"
+        },
+        {
+          "id": "typespecResourceGraph.operations",
+          "name": "Operations",
+          "contextualTitle": "Resource Operations"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "typespecGraph.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)",
+        "category": "TypeSpec"
+      },
+      {
+        "command": "typespecGraph.show",
+        "title": "Show Resource Tree",
+        "category": "TypeSpec"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "typespecGraph.refresh",
+          "when": "view == typespecResourceGraph.resources",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "node esbuild.mjs --production",
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "compile": "tsc --noEmit",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.4.0"
+  }
+}
