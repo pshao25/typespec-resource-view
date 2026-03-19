@@ -33,6 +33,11 @@
           "id": "typespecResourceGraph.operations",
           "name": "Operations",
           "contextualTitle": "Resource Operations"
+        },
+        {
+          "id": "typespecResourceGraph.providerOperations",
+          "name": "Provider Operations",
+          "contextualTitle": "Provider-Level Operations"
         }
       ]
     },

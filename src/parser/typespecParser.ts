@@ -115,9 +115,14 @@ function getSourceLocation(node: any): SourceLocation {
 // Main export
 // ---------------------------------------------------------------------------
 
+export interface ParseResult {
+  providers: ProviderData[];
+  providerOperations: ArmOperation[];
+}
+
 export async function parseTypeSpecProject(
   workspaceRoot: string
-): Promise<ProviderData[]> {
+): Promise<ParseResult> {
   // Load @typespec/compiler
   const compilerPkgDir = findPackageInAncestors(workspaceRoot, "@typespec", "compiler");
   if (!compilerPkgDir) {
@@ -164,7 +169,9 @@ export async function parseTypeSpecProject(
   const provider: { resources?: any[]; providerOperations?: any[] } =
     arm.resolveArmResources(program);
 
-  return buildProviderData(provider);
+  const providerOperations = (provider.providerOperations ?? []).map(buildOperation);
+  const providers = buildProviderData(provider);
+  return { providers, providerOperations };
 }
 
 // ---------------------------------------------------------------------------
@@ -175,36 +182,25 @@ function buildProviderData(
   raw: { resources?: any[]; providerOperations?: any[] }
 ): ProviderData[] {
   const rawResources = raw.resources ?? [];
-  const rawProviderOps = raw.providerOperations ?? [];
 
-  if (rawResources.length === 0 && rawProviderOps.length === 0) return [];
+  if (rawResources.length === 0) return [];
 
   // Group by provider namespace
-  const byNamespace = new Map<string, { resources: any[]; providerOps: any[] }>();
+  const byNamespace = new Map<string, any[]>();
 
   for (const r of rawResources) {
     const ns: string = r.providerNamespace ?? "(unknown)";
-    if (!byNamespace.has(ns)) byNamespace.set(ns, { resources: [], providerOps: [] });
-    byNamespace.get(ns)!.resources.push(r);
-  }
-  for (const op of rawProviderOps) {
-    // provider ops don't carry a namespace directly; put them under the only
-    // known namespace, or a generic bucket
-    const ns =
-      byNamespace.size === 1
-        ? [...byNamespace.keys()][0]
-        : "(provider)";
-    if (!byNamespace.has(ns)) byNamespace.set(ns, { resources: [], providerOps: [] });
-    byNamespace.get(ns)!.providerOps.push(op);
+    if (!byNamespace.has(ns)) byNamespace.set(ns, []);
+    byNamespace.get(ns)!.push(r);
   }
 
   const result: ProviderData[] = [];
-  for (const [ns, bucket] of byNamespace) {
+  for (const [ns, resources] of byNamespace) {
     // Build a flat id→ArmResource map first, then wire parent–child
     const idMap = new Map<string, ArmResource>();
     const allBuilt: { armRes: ArmResource; raw: any }[] = [];
 
-    for (const r of bucket.resources) {
+    for (const r of resources) {
       const armRes = buildResource(r);
       const id = r.resourceInstancePath ?? armRes.name;
       idMap.set(id, armRes);
@@ -225,11 +221,7 @@ function buildProviderData(
       topLevel.push(armRes);
     }
 
-    result.push({
-      namespace: ns,
-      resources: topLevel,
-      providerOps: bucket.providerOps.map(buildOperation),
-    });
+    result.push({ namespace: ns, resources: topLevel });
   }
 
   return result;
@@ -254,6 +246,9 @@ function buildResource(r: any): ArmResource {
   const listOps: ArmOperation[] = (r.operations?.lists ?? []).map(buildOperation);
   const actionOps: ArmOperation[] = (r.operations?.actions ?? []).map(buildOperation);
 
+  // Associated operations (cross-resource operations referencing this resource)
+  const associatedOps: ArmOperation[] = (r.associatedOperations ?? []).map(buildOperation);
+
   return {
     name: r.resourceName ?? r.type?.name ?? resourceType,
     kind: normalizeKind(r.kind),
@@ -264,6 +259,7 @@ function buildResource(r: any): ArmResource {
     lifecycleOps,
     listOps,
     actionOps,
+    associatedOps,
     location: getSourceLocation(r.type?.node),
   };
 }

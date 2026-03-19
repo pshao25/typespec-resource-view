@@ -52,6 +52,8 @@ export interface ArmResource {
   listOps: ArmOperation[];
   /** Action operations */
   actionOps: ArmOperation[];
+  /** Associated operations (cross-resource operations referencing this resource) */
+  associatedOps: ArmOperation[];
   /** Source location of the TypeSpec model */
   location: SourceLocation;
 }
@@ -61,6 +63,4 @@ export interface ProviderData {
   namespace: string;
   /** Top-level resources (no parent) */
   resources: ArmResource[];
-  /** Operations not attached to any resource */
-  providerOps: ArmOperation[];
 }

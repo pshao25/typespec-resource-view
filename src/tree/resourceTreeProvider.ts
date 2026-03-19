@@ -23,7 +23,7 @@ const KIND_ICON: Record<ArmResourceKind, string> = {
   Virtual:   "symbol-misc",
   Custom:    "symbol-struct",
   BuiltIn:   "symbol-namespace",
-  Other:     "symbol-object",
+  Other:     "circle-outline",
 };
 
 // ---------------------------------------------------------------------------

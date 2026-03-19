@@ -1,13 +1,13 @@
 import * as vscode from "vscode";
-import { ArmResource, ArmOperation } from "../shared/types";
+import { ArmOperation } from "../shared/types";
 
 // ---------------------------------------------------------------------------
-// Tree item types — operations only
+// Tree item types — provider-level operations only
 // ---------------------------------------------------------------------------
 
-export type OperationItem =
+export type ProviderOperationItem =
+  | { kind: "loading" }
   | { kind: "placeholder"; message: string }
-  | { kind: "group"; label: string; ops: ArmOperation[] }
   | { kind: "operation"; data: ArmOperation };
 
 const OP_KIND_ICON: Record<string, string> = {
@@ -22,28 +22,35 @@ const OP_KIND_ICON: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// OperationTreeProvider
+// ProviderOperationTreeProvider
 // ---------------------------------------------------------------------------
 
-export class OperationTreeProvider
-  implements vscode.TreeDataProvider<OperationItem>
+export class ProviderOperationTreeProvider
+  implements vscode.TreeDataProvider<ProviderOperationItem>
 {
-  private _onDidChangeTreeData = new vscode.EventEmitter<OperationItem | undefined | void>();
+  private _onDidChangeTreeData = new vscode.EventEmitter<ProviderOperationItem | undefined | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  private _resource: ArmResource | undefined;
+  private _state:
+    | { status: "loading" }
+    | { status: "ready"; ops: ArmOperation[] }
+    = { status: "loading" };
 
   // -------------------------------------------------------------------------
-  // Public API — called from extension.ts on selection change
+  // Public API
   // -------------------------------------------------------------------------
 
-  showResource(resource: ArmResource) {
-    this._resource = resource;
+  setLoading() {
+    this._state = { status: "loading" };
     this._onDidChangeTreeData.fire();
   }
 
-  clear() {
-    this._resource = undefined;
+  /**
+   * Receives the flat providerOperations array directly from the Provider
+   * returned by resolveArmResources (via the parser).
+   */
+  setOps(ops: ArmOperation[]) {
+    this._state = { status: "ready", ops };
     this._onDidChangeTreeData.fire();
   }
 
@@ -51,20 +58,16 @@ export class OperationTreeProvider
   // TreeDataProvider
   // -------------------------------------------------------------------------
 
-  getTreeItem(element: OperationItem): vscode.TreeItem {
+  getTreeItem(element: ProviderOperationItem): vscode.TreeItem {
     switch (element.kind) {
+      case "loading": {
+        const item = new vscode.TreeItem("Loading…");
+        item.iconPath = new vscode.ThemeIcon("loading~spin");
+        return item;
+      }
       case "placeholder": {
         const item = new vscode.TreeItem(element.message);
         item.iconPath = new vscode.ThemeIcon("info");
-        return item;
-      }
-      case "group": {
-        const item = new vscode.TreeItem(
-          element.label,
-          vscode.TreeItemCollapsibleState.Expanded
-        );
-        item.description = `${element.ops.length}`;
-        item.iconPath = new vscode.ThemeIcon("symbol-method");
         return item;
       }
       case "operation": {
@@ -77,7 +80,7 @@ export class OperationTreeProvider
           (data.operationGroup ? `\n\nGroup: \`${data.operationGroup}\`` : "")
         );
         item.iconPath = new vscode.ThemeIcon(OP_KIND_ICON[data.kind] ?? "symbol-event");
-        item.contextValue = "operation";
+        item.contextValue = "providerOperation";
         if (data.location.file) {
           item.command = {
             command: "typespecGraph.navigateTo",
@@ -90,36 +93,21 @@ export class OperationTreeProvider
     }
   }
 
-  getChildren(element?: OperationItem): vscode.ProviderResult<OperationItem[]> {
-    // Root
-    if (!element) {
-      if (!this._resource) {
-        return [{ kind: "placeholder", message: "Select a resource to see its operations" }];
-      }
-      const r = this._resource;
-      const groups: OperationItem[] = [];
-      if (r.lifecycleOps.length > 0) {
-        groups.push({ kind: "group", label: "Lifecycle", ops: r.lifecycleOps });
-      }
-      if (r.listOps.length > 0) {
-        groups.push({ kind: "group", label: "List", ops: r.listOps });
-      }
-      if (r.actionOps.length > 0) {
-        groups.push({ kind: "group", label: "Actions", ops: r.actionOps });
-      }
-      if (r.associatedOps.length > 0) {
-        groups.push({ kind: "group", label: "Associated", ops: r.associatedOps });
-      }
-      if (groups.length === 0) {
-        return [{ kind: "placeholder", message: "No operations defined for this resource" }];
-      }
-      return groups;
+  getChildren(element?: ProviderOperationItem): vscode.ProviderResult<ProviderOperationItem[]> {
+    // Operations are leaf nodes — they have no children
+    if (element) return [];
+
+    if (this._state.status === "loading") {
+      return [{ kind: "loading" }];
     }
 
-    if (element.kind === "group") {
-      return element.ops.map((op): OperationItem => ({ kind: "operation", data: op }));
+    if (this._state.ops.length === 0) {
+      return [{ kind: "placeholder", message: "No provider-level operations found." }];
     }
 
-    return [];
+    return this._state.ops.map((op): ProviderOperationItem => ({
+      kind: "operation",
+      data: op,
+    }));
   }
 }

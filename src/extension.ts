@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import { ResourceTreeProvider } from "./tree/resourceTreeProvider";
 import { OperationTreeProvider } from "./tree/operationTreeProvider";
+import { ProviderOperationTreeProvider } from "./tree/providerOperationTreeProvider";
 import { parseTypeSpecProject } from "./parser/typespecParser";
 import { TspFileWatcher } from "./watcher/fileWatcher";
 
@@ -12,6 +13,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   const resourceProvider  = new ResourceTreeProvider();
   const operationProvider = new OperationTreeProvider();
+  const providerOpProvider = new ProviderOperationTreeProvider();
 
   // Resources view (top)
   const resourceView = vscode.window.createTreeView(
@@ -30,7 +32,15 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
-  context.subscriptions.push(resourceView, operationView);
+  // Provider Operations view — shows providerOperations from resolveArmResources
+  const providerOpView = vscode.window.createTreeView(
+    "typespecResourceGraph.providerOperations",
+    {
+      treeDataProvider: providerOpProvider,
+    }
+  );
+
+  context.subscriptions.push(resourceView, operationView, providerOpView);
 
   // When the user selects a resource node, populate the operations view
   context.subscriptions.push(
@@ -70,7 +80,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Refresh command
   context.subscriptions.push(
     vscode.commands.registerCommand("typespecGraph.refresh", () => {
-      runParse(resourceProvider, operationProvider);
+      runParse(resourceProvider, operationProvider, providerOpProvider);
     })
   );
 
@@ -78,7 +88,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("typespecGraph.show", () => {
       vscode.commands.executeCommand("typespecResourceGraph.resources.focus");
-      runParse(resourceProvider, operationProvider);
+      runParse(resourceProvider, operationProvider, providerOpProvider);
     })
   );
 
@@ -86,10 +96,10 @@ export function activate(context: vscode.ExtensionContext) {
   const workspaceRoot = getWorkspaceRoot();
   if (workspaceRoot) {
     setTimeout(() => {
-      runParse(resourceProvider, operationProvider);
+      runParse(resourceProvider, operationProvider, providerOpProvider);
 
       watcher = new TspFileWatcher(async () => {
-        await runParse(resourceProvider, operationProvider);
+        await runParse(resourceProvider, operationProvider, providerOpProvider);
       });
       context.subscriptions.push({ dispose: () => watcher?.dispose() });
     }, 800);
@@ -106,31 +116,36 @@ export function deactivate() {
 
 async function runParse(
   resourceProvider: ResourceTreeProvider,
-  operationProvider: OperationTreeProvider
+  operationProvider: OperationTreeProvider,
+  providerOpProvider: ProviderOperationTreeProvider
 ): Promise<void> {
   const workspaceRoot = getWorkspaceRoot();
   if (!workspaceRoot) {
     resourceProvider.setError(
       "No workspace folder found.\nPlease open a TypeSpec project folder."
     );
+    providerOpProvider.setOps([]);
     return;
   }
 
   resourceProvider.setLoading();
   operationProvider.clear();
+  providerOpProvider.setLoading();
 
   try {
-    const data = await parseTypeSpecProject(workspaceRoot);
+    const { providers, providerOperations } = await parseTypeSpecProject(workspaceRoot);
 
-    if (data.length === 0) {
+    if (providers.length === 0 && providerOperations.length === 0) {
       resourceProvider.setEmpty(
         "No ARM resources found.\n" +
           "Make sure your .tsp files use @armProviderNamespace and define resources."
       );
+      providerOpProvider.setOps([]);
       return;
     }
 
-    resourceProvider.setData(data);
+    resourceProvider.setData(providers);
+    providerOpProvider.setOps(providerOperations);
   } catch (err: any) {
     const msg = err instanceof Error ? err.message : String(err);
     // "No TypeSpec entry point found" is an expected condition — show as empty state
@@ -139,10 +154,12 @@ async function runParse(
         "No TypeSpec entry point found.\n" +
           "Open a folder that contains a .tsp file (or tspconfig.yaml)."
       );
+      providerOpProvider.setOps([]);
       return;
     }
     console.error("[TypeSpec Graph] Parse error:", err);
     resourceProvider.setError(`Failed to parse TypeSpec project:\n\n${msg}`);
+    providerOpProvider.setOps([]);
   }
 }
 
