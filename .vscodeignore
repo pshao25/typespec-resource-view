@@ -1,4 +1,9 @@
-out/
+out/**/*.map
 node_modules/
 .vscode-test/
+src/
 *.vsix
+vitest.config.ts
+tsconfig.json
+esbuild.mjs
+.vscode/
