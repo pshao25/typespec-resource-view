@@ -8,6 +8,9 @@ import { TspFileWatcher } from "./watcher/fileWatcher";
 
 let watcher: TspFileWatcher | undefined;
 
+/** The folder currently being parsed and watched. */
+let activeRoot: string | undefined;
+
 export function activate(context: vscode.ExtensionContext) {
   console.log("[TypeSpec Graph] Extension activated.");
 
@@ -24,7 +27,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
-  // Operations view (bottom) — updated when user selects a resource
+  // Operations view (middle) — updated when user selects a resource
   const operationView = vscode.window.createTreeView(
     "typespecResourceGraph.operations",
     {
@@ -32,7 +35,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
   );
 
-  // Provider Operations view — shows providerOperations from resolveArmResources
+  // Provider Operations view (bottom)
   const providerOpView = vscode.window.createTreeView(
     "typespecResourceGraph.providerOperations",
     {
@@ -48,7 +51,6 @@ export function activate(context: vscode.ExtensionContext) {
       const selected = e.selection[0];
       if (selected?.kind === "resource") {
         operationProvider.showResource(selected.data);
-        // Update the operations view title to reflect the selected resource
         operationView.title = `Operations — ${selected.data.name}`;
       } else {
         operationProvider.clear();
@@ -77,31 +79,46 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  // Refresh command
+  // Refresh command — re-parses the currently active root
   context.subscriptions.push(
     vscode.commands.registerCommand("typespecGraph.refresh", () => {
-      runParse(resourceProvider, operationProvider, providerOpProvider);
+      const root = activeRoot ?? getWorkspaceRoot();
+      if (root) {
+        switchRoot(root, resourceProvider, operationProvider, providerOpProvider, resourceView);
+      }
     })
   );
 
-  // Show command — focus the view and (re)parse
+  // Show command — focus the view and (re)parse the workspace root
   context.subscriptions.push(
     vscode.commands.registerCommand("typespecGraph.show", () => {
       vscode.commands.executeCommand("typespecResourceGraph.resources.focus");
-      runParse(resourceProvider, operationProvider, providerOpProvider);
+      const root = activeRoot ?? getWorkspaceRoot();
+      if (root) {
+        switchRoot(root, resourceProvider, operationProvider, providerOpProvider, resourceView);
+      }
     })
   );
 
-  // Auto-parse on activation
-  const workspaceRoot = getWorkspaceRoot();
-  if (workspaceRoot) {
-    setTimeout(() => {
-      runParse(resourceProvider, operationProvider, providerOpProvider);
+  // Context-menu command — right-click a folder in Explorer
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "typespecGraph.showForFolder",
+      (folderUri: vscode.Uri) => {
+        const folderPath = folderUri.fsPath;
+        // Focus the panel first so the user sees the tree update
+        vscode.commands.executeCommand("typespecResourceGraph.resources.focus");
+        switchRoot(folderPath, resourceProvider, operationProvider, providerOpProvider, resourceView);
+      }
+    )
+  );
 
-      watcher = new TspFileWatcher(async () => {
-        await runParse(resourceProvider, operationProvider, providerOpProvider);
-      });
-      context.subscriptions.push({ dispose: () => watcher?.dispose() });
+  // Auto-parse on activation using the workspace root
+  const initialRoot = getWorkspaceRoot();
+  if (initialRoot) {
+    activeRoot = initialRoot;
+    setTimeout(() => {
+      switchRoot(initialRoot, resourceProvider, operationProvider, providerOpProvider, resourceView);
     }, 800);
   }
 }
@@ -111,23 +128,45 @@ export function deactivate() {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Switch the active root: tear down old watcher, parse, start new watcher
+// ---------------------------------------------------------------------------
+
+function switchRoot(
+  root: string,
+  resourceProvider: ResourceTreeProvider,
+  operationProvider: OperationTreeProvider,
+  providerOpProvider: ProviderOperationTreeProvider,
+  resourceView: vscode.TreeView<any>
+): void {
+  // Tear down previous watcher
+  watcher?.dispose();
+  watcher = undefined;
+
+  activeRoot = root;
+
+  // Update the Resources panel title to show which folder is active
+  const folderName = root.replace(/\\/g, "/").split("/").pop() ?? root;
+  resourceView.title = `Resources — ${folderName}`;
+
+  // Parse
+  runParse(root, resourceProvider, operationProvider, providerOpProvider);
+
+  // Start a new file watcher for the new root
+  watcher = new TspFileWatcher(async () => {
+    await runParse(root, resourceProvider, operationProvider, providerOpProvider);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Parse a specific root folder
 // ---------------------------------------------------------------------------
 
 async function runParse(
+  workspaceRoot: string,
   resourceProvider: ResourceTreeProvider,
   operationProvider: OperationTreeProvider,
   providerOpProvider: ProviderOperationTreeProvider
 ): Promise<void> {
-  const workspaceRoot = getWorkspaceRoot();
-  if (!workspaceRoot) {
-    resourceProvider.setError(
-      "No workspace folder found.\nPlease open a TypeSpec project folder."
-    );
-    providerOpProvider.setOps([]);
-    return;
-  }
-
   resourceProvider.setLoading();
   operationProvider.clear();
   providerOpProvider.setLoading();
@@ -148,7 +187,6 @@ async function runParse(
     providerOpProvider.setOps(providerOperations);
   } catch (err: any) {
     const msg = err instanceof Error ? err.message : String(err);
-    // "No TypeSpec entry point found" is an expected condition — show as empty state
     if (msg.includes("No TypeSpec entry point")) {
       resourceProvider.setEmpty(
         "No TypeSpec entry point found.\n" +
@@ -162,6 +200,10 @@ async function runParse(
     providerOpProvider.setOps([]);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function getWorkspaceRoot(): string | undefined {
   const folders = vscode.workspace.workspaceFolders;

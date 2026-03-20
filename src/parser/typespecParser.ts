@@ -49,7 +49,7 @@ function resolvePackageEntry(packageDir: string): string {
   throw new Error(`Cannot resolve ESM entry point for package at: ${packageDir}`);
 }
 
-function pathToFileUrl(absPath: string): string {
+/* @internal */ export function pathToFileUrl(absPath: string): string {
   const normalised = absPath.replace(/\\/g, "/");
   return normalised.startsWith("/") ? `file://${normalised}` : `file:///${normalised}`;
 }
@@ -66,21 +66,20 @@ async function dynamicImport(packageDir: string): Promise<any> {
 // Entry point discovery
 // ---------------------------------------------------------------------------
 
-function findEntryPoint(workspaceRoot: string): string | undefined {
+/* @internal */ export function findEntryPoint(workspaceRoot: string): string | undefined {
   const tspConfigPath = path.join(workspaceRoot, "tspconfig.yaml");
-  if (fs.existsSync(tspConfigPath)) {
-    const content = fs.readFileSync(tspConfigPath, "utf-8");
-    const m = content.match(/^\s*main\s*:\s*["']?([^\s"']+\.tsp)["']?/m);
-    if (m) return path.join(workspaceRoot, m[1]);
+  const mainTspPath = path.join(workspaceRoot, "main.tsp");
+
+  // Both tspconfig.yaml and main.tsp must be present
+  if (!fs.existsSync(tspConfigPath) || !fs.existsSync(mainTspPath)) {
+    return undefined;
   }
-  for (const c of ["main.tsp", "client.tsp", "service.tsp"]) {
-    const p = path.join(workspaceRoot, c);
-    if (fs.existsSync(p)) return p;
-  }
-  const files = fs.readdirSync(workspaceRoot);
-  const f = files.find((f) => f.endsWith(".tsp"));
-  if (f) return path.join(workspaceRoot, f);
-  return undefined;
+
+  // If tspconfig.yaml specifies a custom main, use that; otherwise fall back to main.tsp
+  const content = fs.readFileSync(tspConfigPath, "utf-8");
+  const m = content.match(/^\s*main\s*:\s*["']?([^\s"']+\.tsp)["']?/m);
+  if (m) return path.join(workspaceRoot, m[1]);
+  return mainTspPath;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,6 +122,15 @@ export interface ParseResult {
 export async function parseTypeSpecProject(
   workspaceRoot: string
 ): Promise<ParseResult> {
+  // Find entry point first — cheap fs check, avoids loading heavy dependencies
+  // for folders that are not TypeSpec projects.
+  const entryPoint = findEntryPoint(workspaceRoot);
+  if (!entryPoint) {
+    throw new Error(
+      `No TypeSpec entry point (.tsp file) found in workspace: ${workspaceRoot}`
+    );
+  }
+
   // Load @typespec/compiler
   const compilerPkgDir = findPackageInAncestors(workspaceRoot, "@typespec", "compiler");
   if (!compilerPkgDir) {
@@ -144,14 +152,6 @@ export async function parseTypeSpecProject(
     );
   }
   const arm = await dynamicImport(armPkgDir);
-
-  // Find entry point
-  const entryPoint = findEntryPoint(workspaceRoot);
-  if (!entryPoint) {
-    throw new Error(
-      `No TypeSpec entry point (.tsp file) found in workspace: ${workspaceRoot}`
-    );
-  }
 
   // Compile
   const NodeHost = compiler.NodeHost;
@@ -227,7 +227,7 @@ function buildProviderData(
   return result;
 }
 
-function buildResource(r: any): ArmResource {
+/* @internal */ export function buildResource(r: any): ArmResource {
   const { provider, types } = r.resourceType ?? {};
   const resourceType =
     provider && types ? `${provider}/${types.join("/")}` : r.type?.name ?? "";
@@ -264,7 +264,7 @@ function buildResource(r: any): ArmResource {
   };
 }
 
-function buildOperation(op: any): ArmOperation {
+/* @internal */ export function buildOperation(op: any): ArmOperation {
   return {
     name: op.name ?? op.operation?.name ?? "unknown",
     kind: normalizeOpKind(op.kind),
@@ -274,7 +274,7 @@ function buildOperation(op: any): ArmOperation {
   };
 }
 
-function normalizeKind(kind: string | undefined): ArmResourceKind {
+/* @internal */ export function normalizeKind(kind: string | undefined): ArmResourceKind {
   const valid: ArmResourceKind[] = [
     "Tracked", "Proxy", "Extension", "Virtual", "Custom", "BuiltIn", "Other",
   ];
@@ -282,7 +282,7 @@ function normalizeKind(kind: string | undefined): ArmResourceKind {
   return "Other";
 }
 
-function normalizeOpKind(kind: string | undefined): ArmOperationKind {
+/* @internal */ export function normalizeOpKind(kind: string | undefined): ArmOperationKind {
   const valid: ArmOperationKind[] = [
     "read", "createOrUpdate", "update", "delete", "checkExistence",
     "list", "action", "other",

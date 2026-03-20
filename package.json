@@ -6,7 +6,9 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Visualization"],
+  "categories": [
+    "Visualization"
+  ],
   "activationEvents": [
     "workspaceContains:**/tspconfig.yaml",
     "workspaceContains:**/*.tsp"
@@ -52,6 +54,11 @@
         "command": "typespecGraph.show",
         "title": "Show Resource Tree",
         "category": "TypeSpec"
+      },
+      {
+        "command": "typespecGraph.showForFolder",
+        "title": "Show TypeSpec Resources",
+        "category": "TypeSpec"
       }
     ],
     "menus": {
@@ -61,6 +68,13 @@
           "when": "view == typespecResourceGraph.resources",
           "group": "navigation"
         }
+      ],
+      "explorer/context": [
+        {
+          "command": "typespecGraph.showForFolder",
+          "when": "explorerResourceIsFolder",
+          "group": "typespec@1"
+        }
       ]
     }
   },
@@ -69,12 +83,15 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "compile": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "package": "vsce package"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
     "esbuild": "^0.20.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.0"
   }
 }

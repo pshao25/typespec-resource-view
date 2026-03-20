@@ -111,7 +111,7 @@ export class ResourceTreeProvider
         item.description = data.kind;
         item.tooltip = new vscode.MarkdownString(
           `**${data.name}** *(${data.kind})*\n\n` +
-          `\`${data.resourceType}\`\n\n` +
+          `Type: \`${data.resourceType}\`\n\n` +
           `Path: \`${data.resourceInstancePath}\``
         );
         item.iconPath = new vscode.ThemeIcon(KIND_ICON[data.kind]);
