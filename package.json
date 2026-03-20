@@ -57,7 +57,7 @@
       },
       {
         "command": "typespecGraph.showForFolder",
-        "title": "Show TypeSpec Resources",
+        "title": "Show TypeSpec ARM Resources",
         "category": "TypeSpec"
       }
     ],
